@@ -1,0 +1,11 @@
+variables:
+  # 同步配置
+  UPSTREAM_BRANCH: "main" 
+  
+  # 构建配置
+  PARALLEL_JOBS: 3
+  TARGET_ARCH: "ios-arm64"
+  
+  # 通知配置
+  SLACK_CHANNEL: "#your-channel"
+  EMAIL_RECIPIENT: "your-team@domain.com"
