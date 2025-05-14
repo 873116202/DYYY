@@ -46,21 +46,3 @@ jobs:
         with:
           name: DYYY
           path: ${{ github.workspace }}/packages/*.deb
-
-  sync-fork:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: 同步上游仓库
-        uses: TG908/fork-sync@v1.6.3
-        with:
-          # 关键修复：参数名从 github_token 改为 token
-          token: ${{ secrets.SYNC_TOKEN }}  # 使用专用Token更安全
-          owner: iphoneos-arm64   # 上游仓库拥有者
-          head: main        # 上游分支
-          base: main        # 本地分支
-          merge_method: rebase  # 避免合并提交
