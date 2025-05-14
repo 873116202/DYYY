@@ -1,125 +1,44 @@
-name: Sync & Build Debian
+name: build deb
 
-on:
-  schedule:
-    - cron: "0 0 * * *"  # 每天 UTC 时间 0 点自动同步
-  push:
-    branches: [main]
-    paths-ignore:  # 忽略非关键路径的触发
-      - 'docs/**'
-      - 'README.md'
-  pull_request:
-    branches: [main]
+# 修复点：将 on 部分改为列表或带空对象的结构
+on: [push, pull_request]  # ✅ 正确写法
 
 jobs:
-  sync_upstream:
-    name: Sync Fork Repository
-    runs-on: ubuntu-latest
-    outputs:  # 定义输出变量供后续任务使用
-      sync_status: ${{ steps.push-result.outputs.status }}
-    
-    steps:
-      - name: Checkout Fork
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # 获取完整提交历史
+ build:
+   runs-on: macos-latest
 
-      - name: Add Upstream Remote
-        run: git remote add upstream ${{ secrets.UPSTREAM_REPO_URL }}
+   steps:
+     - uses: actions/checkout@v4.2.2
+       with:
+         submodules: true
 
-      - name: Fetch Latest Changes
-        run: git fetch upstream
+     - name: Check cache
+       run: |
+         echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
 
-      - name: Merge Updates
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-          git merge --no-edit upstream/main
+     - name: Use cache
+       id: cache
+       uses: actions/cache@v4.2.1
+       with:
+         path: ${{ github.workspace }}/theos
+         key: ${{ runner.os }}-${{ env.upstream_heads }}
 
-      - name: Push to Fork
-        id: push-result
-        uses: ad-m/github-push-action@master
-        with:
-          ssh: true
-          ssh_private_key: ${{ secrets.SYNC_PRIVATE_KEY }}
-          branch: main
-          force: true  # 允许强制推送解决冲突
+     - name: Prepare Theos
+       uses: huami1314/theos-action@main
 
-  build_deb:
-    name: Build Debian Package
-    needs: sync_upstream  # 依赖同步任务完成
-    runs-on: macos-latest
-    if: needs.sync_upstream.result == 'success'  # 仅在同步成功时执行
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+     - name: Setup GNU Make
+       run: |
+         echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
-      - name: Cache Theos SDK
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/theos
-          key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
+     - name: Build package
+       run: |
+         rm -f packages/*
+         make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+         make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+         make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
 
-      - name: Prepare Build Environment
-        uses: huami1314/theos-action@main
-        with:
-          target: ios-arm64  # 指定iOS ARM架构
-
-      - name: Setup Build Tools
-        run: |
-          brew install make
-          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
-
-      - name: Multi-Architecture Build
-        run: |
-          mkdir -p packages
-          export FINALPACKAGE=1
-          
-          # 并行构建三种包方案
-          parallel -j 3 <<EOF
-            make package THEOS_PACKAGE_SCHEME=rootless
-            make package THEOS_PACKAGE_SCHEME=roothide 
-            make package THEOS_PACKAGE_SCHEME=standard
-          EOF
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Debian_Packages_$(date +%Y%m%d)
-          path: |
-            ${{ github.workspace }}/packages/*.deb
-            ${{ github.workspace }}/build/*.log
-          retention-days: 7
-
-  notify:
-    name: Notification
-    needs: [sync_upstream, build_deb]
-    runs-on: ubuntu-latest
-    if: always()  # 无论成功失败都通知
-    steps:
-      - name: Slack Notification
-        if: failure()
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "❌ Build Failed: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Log>",
-              "channel": "#ci-alerts"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
-
-      - name: Email Report
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.MAIL_USER }}
-          password: ${{ secrets.MAIL_PASSWORD }}
-          subject: "Build Result: ${{ job.status }}"
-          body: "Jobs status:\n${{ toJson(needs) }}"
-          to: dev-team@example.com
+     - name: Upload specific Deb packages
+       uses: actions/upload-artifact@v4.6.0
+       with:
+         name: DYYY
+         path: ${{ github.workspace }}/packages/*.deb
