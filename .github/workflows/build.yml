@@ -1,77 +1,44 @@
-# File: .github/workflows/build.yml
-name: Robust Build System
+name: build deb
 
-on:
-  push:
-    branches: [ main ]
-  schedule:
-    - cron: '0 2 * * *'
+# 修复点：将 on 部分改为列表或带空对象的结构
+on: [push, pull_request]  # ✅ 正确写法
 
 jobs:
-  precheck:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Validate Workflow
-        uses: actions/checkout@v4
-      - name: Syntax Check
-        run: |
-          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/build.yml')"
-        shell: bash
+ build:
+   runs-on: macos-latest
 
-  sync:
-    needs: precheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Secure Sync
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
-          fetch-depth: 0
+   steps:
+     - uses: actions/checkout@v4.2.2
+       with:
+         submodules: true
 
-      - name: Merge Upstream
-        env:
-          UPSTREAM: 873116202/DYYY
-        run: |
-          git config --global pull.rebase false
-          git remote add upstream "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${UPSTREAM}.git"
-          git pull --commit --no-edit upstream main
-          git push origin main
+     - name: Check cache
+       run: |
+         echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
 
-  build:
-    needs: [precheck, sync]
-    runs-on: macos-13
-    env:
-      THEOS: ${{ github.workspace }}/theos
-    steps:
-      - name: Safe Checkout
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+     - name: Use cache
+       id: cache
+       uses: actions/cache@v4.2.1
+       with:
+         path: ${{ github.workspace }}/theos
+         key: ${{ runner.os }}-${{ env.upstream_heads }}
 
-      - name: Core Setup
-        run: |
-          # 强制清理缓存
-          brew cleanup -s
-          # 原子化依赖安装
-          {
-            brew install make ldid &&
-            sudo cpan -T File::Which
-          } || exit 1
+     - name: Prepare Theos
+       uses: huami1314/theos-action@main
 
-      - name: Theos Bootstrap
-        run: |
-          mkdir -p $THEOS
-          git clone --depth 1 https://github.com/roothide/theos.git $THEOS
-          ln -sf $THEOS/sdks $THEOS/vendor/sdks || true
+     - name: Setup GNU Make
+       run: |
+         echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
-      - name: Guaranteed Build
-        timeout-minutes: 8
-        run: |
-          export PATH="$THEOS/bin:$PATH"
-          make clean
-          make package \
-            THEOS_PACKAGE_SCHEME=roothide \
-            FINALPACKAGE=1 \
-            DEBUG=0 \
-            -j$(($(sysctl -n hw.ncpu)/2))
+     - name: Build package
+       run: |
+         rm -f packages/*
+         make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+         make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+         make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+
+     - name: Upload specific Deb packages
+       uses: actions/upload-artifact@v4.6.0
+       with:
+         name: DYYY
+         path: ${{ github.workspace }}/packages/*.deb
