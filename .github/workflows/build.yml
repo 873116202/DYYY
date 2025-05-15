@@ -1,40 +1,30 @@
-# .github/workflows/build.yml
-name: Build DEB Packages
-
-on: [push, pull_request]
-
-jobs:
-  build:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4.2.2
-        with:
-          submodules: true
-      
-      - name: Check cache
-        run: |
-          echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
-      
-      - uses: actions/cache@v4.2.1
-        id: cache
-        with:
-          path: ${{ github.workspace }}/theos
-          key: ${{ runner.os }}-${{ env.upstream_heads }}
-      
-      - uses: huami1314/theos-action@main
-        name: Prepare Theos
-      
-      - run: |
-          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
-        name: Setup GNU Make
-      
-      - run: |
-          rm -f packages/*
-          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-        name: Build package
-      
-      - uses: actions/upload-artifact@v4.6.0
-        with:
-          name: DYYY
+name: Build DEB Packages 
+on: 
+  push: 
+    branches: 
+      - main 
+jobs: 
+  build: 
+    runs - on: ubuntu - latest 
+    steps: 
+      - name: Set up job 
+        run: echo "Job setup" 
+      - name: Checkout code 
+        uses: actions/checkout@v4.2.2 
+      - name: Check cache 
+        uses: actions/cache@v4.2.1 
+      - name: Prepare Theos 
+        run: echo "Preparing Theos" 
+      - name: Setup GNU Make 
+        run: echo "Setting up GNU Make" 
+      - name: Build package 
+        run: echo "Building package" 
+      - name: Upload artifact 
+        uses: actions/upload - artifact@v4.6.0 
+        with: 
+          name: my - artifact 
+          path: output/ 
+      - name: Post - Run cache 
+        uses: actions/cache@v4.2.1 
+      - name: Post - Run checkout 
+        uses: actions/checkout@v4.2.2
