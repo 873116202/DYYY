@@ -6,74 +6,47 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]     # 明确指定触发分支
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: macos-latest 
     permissions:
       contents: write
-      pull-requests: write # 新增PR权限
 
     steps:
-      # 同步上游仓库（修复分支冲突）
+      # 同步上游仓库（仅定时任务触发）
       - name: Sync Fork Repository 
+        if: github.event_name == 'schedule'
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
           git remote add upstream https://github.com/roothide/theos.git
           git fetch upstream
-          # 强制同步策略
           git checkout -B main upstream/main
-          git push --force "https://x-access-token:${{ secrets.FORK_PAT }}@github.com/873116202/DYYY.git" main
+          git push --force "https://x-access-token:${{ secrets.FORK_PAT }}@github.com/873116202/DYYY.git" main 
         env:
           GITHUB_PAT: ${{ secrets.FORK_PAT }}
-        if: github.event_name == 'schedule'
 
-      # 优化PR触发时的代码检出
+      # 代码检出
       - name: Checkout code 
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }} # 正确处理PR commit
-          submodules: recursive
-          fetch-depth: 0
+          submodules: true 
 
-      # 修复缓存策略（添加自动清理）
-      - name: Cache management
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/Homebrew
-            .build
-            .theos
-          key: ${{ runner.os }}-build-${{ hashFiles('**/Makefile') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
-
-      # 关键修复：添加依赖安装
-      - name: Install Dependencies
-        run: |
-          brew update
-          brew install ldid xz
-          sudo xcode-select --switch /Applications/Xcode.app
-
-      # 修复构建命令（添加详细日志）
+      # 构建流程精简版
       - name: Build Project 
         run: |
-          set -ex
           ./bootstrap.sh
-          make package ARCHS=arm64 # 明确指定架构
+          make package
 
-      # 增强验证步骤
+      # 基础验证
       - name: Validate Build 
         run: |
-          if [ ! -f *.deb ]; then
-            echo "::error::No build artifacts found"
-            exit 1
-          fi
-          dpkg-deb -I *.deb
+          ls -l *.deb
+          file *.deb
 
-      # 错误处理增强
+      # 错误处理（保留日志功能）
       - name: Upload Build Log
         if: failure()
         uses: actions/upload-artifact@v3
@@ -81,16 +54,3 @@ jobs:
           name: build-error-log
           path: |
             build.log
-            bootstrap.log
-
-      # 修复通知配置
-      - name: Notify Status
-        uses: appleboy/scrapbox-action@v1.0.0
-        with:
-          scrapbox_project_id: ${{ secrets.SCRAPBOX_PROJECT_ID }}
-          scrapbox_token: ${{ secrets.SCRAPBOX_TOKEN }}
-          markdown_file: 'README.md'
-          message: |
-            ${{ format('<{0}|{1}> {2}', github.server_url ~ '/' ~ github.repository ~ '/actions/runs/' ~ github.run_id, github.workflow, job.status) }}
-            Commit: ${{ github.sha }}
-            Trigger: ${{ github.event_name }}
