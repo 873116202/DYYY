@@ -1,44 +1,71 @@
-name: build deb
-
-# 修复点：将 on 部分改为列表或带空对象的结构
-on: [push, pull_request]  # ✅ 正确写法
+name: Build Deb & Sync Fork
+on:
+  # 触发条件：推送、PR、定时（每天凌晨2点）
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 16 * * *'  # UTC时间，每天凌晨2点
 
 jobs:
- build:
-   runs-on: macos-latest
+  build:
+    runs-on: macos-latest
 
-   steps:
-     - uses: actions/checkout@v4.2.2
-       with:
-         submodules: true
+    steps:
+      # 0. 检出当前仓库（你的Fork）
+      - name: Checkout Repository
+        uses: actions/checkout@v4.2.2
+        with:
+          submodules: true
+          fetch-depth: 0  # 完整历史，避免浅克隆导致同步失败
 
-     - name: Check cache
-       run: |
-         echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
+      # 1. 同步上游仓库（关键新增步骤）
+      - name: Sync with Upstream
+        run: |
+          # 配置上游仓库（你的Fork显示forked from Wtrwx/DYYY）
+          git remote add upstream https://github.com/Wtrwx/DYYY.git || true
+          git remote -v  # 验证远程仓库
 
-     - name: Use cache
-       id: cache
-       uses: actions/cache@v4.2.1
-       with:
-         path: ${{ github.workspace }}/theos
-         key: ${{ runner.os }}-${{ env.upstream_heads }}
+          # 拉取上游最新代码（仅主分支）
+          git fetch upstream main --depth=1
+          echo "Upstream commits: $(git log --oneline HEAD..upstream/main | wc -l)"
 
-     - name: Prepare Theos
-       uses: huami1314/theos-action@main
+          # 快进合并（无冲突时直接同步，有冲突则失败）
+          git checkout main
+          git merge upstream/main --ff-only || exit 1  # 冲突时终止构建
 
-     - name: Setup GNU Make
-       run: |
-         echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
+          # 推送同步结果到你的Fork（可选，如需保持Fork与本地一致）
+          git push origin main -f || true  # 失败时不中断构建（如无更新）
 
-     - name: Build package
-       run: |
-         rm -f packages/*
-         make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-         make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-         make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+      # 2. 原有构建流程（保留）
+      - name: Check cache
+        run: |
+          echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
 
-     - name: Upload specific Deb packages
-       uses: actions/upload-artifact@v4.6.0
-       with:
-         name: DYYY
-         path: ${{ github.workspace }}/packages/*.deb
+      - name: Use cache
+        id: cache
+        uses: actions/cache@v4.2.1
+        with:
+          path: ${{ github.workspace }}/theos
+          key: ${{ runner.os }}-${{ env.upstream_heads }}
+
+      - name: Prepare Theos
+        uses: huami1314/theos-action@main
+
+      - name: Setup GNU Make
+        run: |
+          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
+
+      - name: Build package
+        run: |
+          rm -f packages/*
+          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+
+      - name: Upload Deb packages
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: DYYY
+          path: ${{ github.workspace }}/packages/*.deb
