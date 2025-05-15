@@ -1,5 +1,5 @@
 # File: .github/workflows/build.yml
-name: Ultimate Build
+name: Ultimate Build Flow
 
 on:
   push:
@@ -8,79 +8,77 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  sync-and-build:
-    runs-on: macos-latest
-    timeout-minutes: 15
-
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      # 同步上游仓库
-      - name: Checkout & Sync
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Force Sync Fork
+        env:
+          UPSTREAM_REPO: 873116202/DYYY
+          TARGET_BRANCH: main
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream --force
+          git reset --hard upstream/$TARGET_BRANCH
+          git push origin "$TARGET_BRANCH" --force
+
+  build:
+    needs: sync
+    runs-on: macos-13
+    timeout-minutes: 10
+    env:
+      THEOS_ROOT: ${{ github.workspace }}/theos
+    steps:
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
-        env:
-          UPSTREAM_REPO: 873116202/DYYY
-        run: |
-          git remote add upstream https://github.com/$UPSTREAM_REPO
-          git fetch upstream
-          git merge --no-edit upstream/main
-          git push origin main
 
-      # 修复依赖安装问题
-      - name: Setup Environment
+      - name: Core Dependencies
         run: |
-          # 强制更新brew
-          brew update-reset
-          
-          # 安装核心依赖
-          brew install --force-bottle make ldid
+          # 修复brew更新问题
           export HOMEBREW_NO_INSTALL_CLEANUP=1
-          
-          # 修复perl模块安装
-          echo -e "install --force\nnotest" > $HOME/.cpan/CPAN/MyConfig.pm
-          yes | sudo cpan -T File::Which
+          brew update-reset
+          brew install --force-bottle make ldid
 
-      # 配置Theos环境
-      - name: Prepare Theos
-        run: |
-          THEOS_DIR="${HOME}/theos_cache"
-          [ -d "$THEOS_DIR" ] || git clone --depth 1 https://github.com/roothide/theos.git $THEOS_DIR
-          ln -sf $THEOS_DIR theos
-          
-          SDK_DIR="${THEOS_DIR}/sdks"
-          [ -d "$SDK_DIR" ] || git clone --filter=blob:none https://github.com/theos/sdks.git $SDK_DIR
+          # 修复Perl模块安装
+          echo "install --force" | sudo tee -a ~/.cpan/CPAN/MyConfig.pm
+          yes | sudo cpan -T File::Which XML::Parser
 
-      # 智能构建系统
-      - name: Build Packages
-        env:
-          THEOS: ${{ github.workspace }}/theos
+      - name: Setup Theos SDK
         run: |
-          export PATH="${THEOS}/bin:${PATH}"
-          
-          # 清理旧构建
-          find . -name '*.deb' -delete
+          mkdir -p $THEOS_ROOT/sdks
+          git clone --filter=blob:none --depth=1 \
+            https://github.com/theos/sdks.git $THEOS_ROOT/sdks
+
+          # 验证SDK存在性
+          if [ ! -d "$THEOS_ROOT/sdks/iPhoneOS14.5.sdk" ]; then
+            echo "::error::Missing critical SDK files"
+            exit 1
+          fi
+
+      - name: Build Process
+        run: |
+          export PATH="$THEOS_ROOT/bin:$PATH"
           make clean
           
-          # 并行安全构建
-          MAX_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-          SCHEMES=("rootless" "roothide")
-          
-          for scheme in "${SCHEMES[@]}"; do
-            xcrun make package \
-              THEOS_PACKAGE_SCHEME=$scheme \
-              FINALPACKAGE=1 \
-              -j${MAX_JOBS} \
-              DEBUG=0
-          done
+          # 安全构建参数
+          export THEOS_PACKAGE_SCHEME=roothide
+          export FINALPACKAGE=1
+          export THEOS_MAKE_PARALLEL=no
 
-      # 增强型制品上传
-      - name: Upload Artifacts
+          # 分步构建
+          make stage && \
+          make package || exit 1
+
+      - name: Artifact Control
         uses: actions/upload-artifact@v4
         with:
-          name: DYYY-Binaries
-          path: |
-            *.deb
-            !*debug*
-          compression-level: 9
-          retention-days: 3
+          name: Production-Binaries
+          path: packages/*.deb
+          if-no-files-found: error
