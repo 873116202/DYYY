@@ -1,56 +1,41 @@
-name: Build & Auto Sync 
+# .github/workflows/build.yml
+name: Build DEB Packages
 
-on:
-  schedule:
-    - cron: "0 16 * * *"  # UTC时间0点（北京时间8点）执行 
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: macos-latest 
-    permissions:
-      contents: write
-
+    runs-on: macos-latest
     steps:
-      # 同步上游仓库（仅定时任务触发）
-      - name: Sync Fork Repository 
-        if: github.event_name == 'schedule'
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git remote add upstream https://github.com/roothide/theos.git
-          git fetch upstream
-          git checkout -B main upstream/main
-          git push --force "https://x-access-token:${{ secrets.FORK_PAT }}@github.com/873116202/DYYY.git" main 
-        env:
-          GITHUB_PAT: ${{ secrets.FORK_PAT }}
-
-      # 代码检出
-      - name: Checkout code 
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
         with:
-          submodules: true 
-
-      # 构建流程精简版
-      - name: Build Project 
+          submodules: true
+      
+      - name: Check cache
         run: |
-          ./bootstrap.sh
-          make package
-
-      # 基础验证
-      - name: Validate Build 
-        run: |
-          ls -l *.deb
-          file *.deb
-
-      # 错误处理（保留日志功能）
-      - name: Upload Build Log
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with: 
-          name: build-error-log
-          path: |
-            build.log
+          echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
+      
+      - uses: actions/cache@v4.2.1
+        id: cache
+        with:
+          path: ${{ github.workspace }}/theos
+          key: ${{ runner.os }}-${{ env.upstream_heads }}
+      
+      - uses: huami1314/theos-action@main
+        name: Prepare Theos
+      
+      - run: |
+          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
+        name: Setup GNU Make
+      
+      - run: |
+          rm -f packages/*
+          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+        name: Build package
+      
+      - uses: actions/upload-artifact@v4.6.0
+        with:
+          name: DYYY
+          path: ${{ github.workspace }}/packages/*.deb
