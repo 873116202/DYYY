@@ -5,61 +5,77 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:  # 添加手动触发选项
   schedule:
-    - cron: '0 16 * * *'  # 每小时自动同步上游仓库
+    - cron: '0 * * * *'  # 保持每小时同步
 
 jobs:
   sync-fork:
     name: Sync upstream changes
     runs-on: ubuntu-latest
     steps:
-      - name: Fork Sync
-        uses: TG908/fork-sync@v1.6.3
+      - name: 仓库状态预检
+        run: |
+          echo "当前仓库：${{ github.repository }}"
+          git remote -v
+          git branch -a
+
+      - name: 强制同步上游
+        uses: TG908/fork-sync@v1.8.0  # 升级到最新版本
         with:
-          github_token: ${{ secrets.FORK_SYNC_TOKEN }}  # 存储为仓库Secret的PAT密钥
-          owner: roothide   # 上游仓库所有者
-          head: master      # 上游仓库分支
-          base: master      # 本地仓库分支
-          merge_method: rebase  # 使用rebase合并方式保持提交历史整洁
-          pr_title: "[AutoSync] Upstream updates"  # 自定义PR标题
-          ignore_fail: true  # 忽略合并冲突等错误
+          github_token: ${{ secrets.FORK_SYNC_TOKEN }}
+          owner: roothide
+          repo: theos  # 明确指定上游仓库名
+          head: main   # 根据错误修正为main分支
+          base: main   # 保持与本地分支一致
+          merge_method: hardreset  # 强制覆盖本地修改
+          conflict_resolution: theirs  # 自动采用上游变更
+          force: true  # 强制推送
+
+      - name: 同步后验证
+        if: always()
+        run: |
+          git fetch origin main
+          git log -1 --oneline
+          git diff origin/main
 
   build-deb:
     name: Build DEB packages
-    needs: sync-fork  # 依赖同步任务完成
+    needs: sync-fork
+    if: needs.sync-fork.result == 'success'  # 仅同步成功时构建
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4.2.2
         with:
-          submodules: true
+          submodules: recursive  # 增强子模块处理
+          ref: main  # 明确指定分支
 
-      - name: Check cache
+      - name: 缓存优化
         run: |
-          echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)-$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)" >> $GITHUB_ENV
+          echo "upstream_heads=$(git ls-remote https://github.com/roothide/theos main | cut -f1)-$(git ls-remote https://github.com/theos/sdks main | cut -f1)" >> $GITHUB_ENV
 
-      - name: Use cache
-        id: cache
-        uses: actions/cache@v4.2.1
+      - uses: actions/cache@v4.2.1
+        id: theos-cache
         with:
-          path: ${{ github.workspace }}/theos
+          path: theos
           key: ${{ runner.os }}-${{ env.upstream_heads }}
 
-      - name: Prepare Theos
+      - name: 环境准备
         uses: huami1314/theos-action@main
+        env:
+          THEOS: ${{ github.workspace }}/theos
 
-      - name: Setup GNU Make
+      - name: 多架构构建
         run: |
-          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
+          export PATH="$(brew --prefix)/opt/make/libexec/gnubin:$PATH"
+          for scheme in rootless roothide; do
+            make clean
+            make package THEOS_PACKAGE_SCHEME=$scheme FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          done
 
-      - name: Build package
-        run: |
-          rm -f packages/*
-          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-          make package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-
-      - name: Upload specific Deb packages
+      - name: 工件上传
         uses: actions/upload-artifact@v4.6.0
         with:
-          name: DYYY
-          path: ${{ github.workspace }}/packages/*.deb
+          name: DYYY_${{ github.run_number }}
+          path: packages/*.deb
+          retention-days: 7
