@@ -2,7 +2,7 @@ name: Build & Auto Sync
  
 on:
   schedule:
-    - cron: "0 16 * * *"  # UTC+8 时间每天8点执行 
+    - cron: "0 16 * * *"  # UTC时间0点（北京时间8点）执行 
   push:
     branches: [ main ]
   pull_request:
@@ -23,9 +23,9 @@ jobs:
           git fetch upstream 
           git checkout main 
           git merge upstream/main -X theirs 
-          git push "https://x-access-token:${FORK_PAT}@github.com/873116202/DYYY.git" main 
+          git push "https://x-access-token:${{ secrets.FORK_PAT }}@github.com/873116202/DYYY.git" main 
         env:
-          FORK_PAT: ${{ secrets.FORK_PAT }}
+          GITHUB_PAT: ${{ secrets.FORK_PAT }}
         if: github.event_name == 'schedule'
  
       # 初始化仓库（所有触发条件）
@@ -60,7 +60,7 @@ jobs:
           ./bootstrap.sh 
           make package 
  
-      # 构建后验证（可选）
+      # 构建后验证 
       - name: Validate Build 
         run: |
           ls -l *.deb  # 检查构建产物存在性
@@ -73,10 +73,25 @@ jobs:
           echo "Build Failed: $(date)"
           git log -1  # 记录失败时的提交信息 
  
-      # 通知（可选）
+      # 通知配置（可选）
+      - name: Notify on Success 
+        if: success()
+        uses: appleboy/scrapbox-action@v1
+        with:
+          token: ${{ secrets.SCRAPBOX_TOKEN }}
+          message: "Build Success: ${{ github.sha }}"
+ 
       - name: Notify on Failure 
         if: failure()
         uses: appleboy/scrapbox-action@v1
         with:
           token: ${{ secrets.SCRAPBOX_TOKEN }}
-          message: "Build Failed: ${GITHUB_SHA}"
+          message: "Build Failed: ${{ github.sha }}"
+ 
+      # 部署步骤（根据需求添加）
+      - name: Deploy to Server 
+        if: success()
+        run: |
+          scp *.deb user@server:/path/to/deploy 
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
