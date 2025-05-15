@@ -1,77 +1,86 @@
-# File: .github/workflows/main.yml
-name: Sync & Build
+# File: .github/workflows/build.yml
+name: Ultimate Build
 
 on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 2 * * *'  # 每天UTC时间2点自动运行
+    - cron: '0 2 * * *'
 
 jobs:
-  sync-fork:
-    runs-on: ubuntu-latest
+  sync-and-build:
+    runs-on: macos-latest
+    timeout-minutes: 15
+
     steps:
-      - name: Checkout
+      # 同步上游仓库
+      - name: Checkout & Sync
         uses: actions/checkout@v4
         with:
+          submodules: recursive
           fetch-depth: 0
-
-      - name: Configure Git
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-
-      - name: Sync from Upstream
         env:
           UPSTREAM_REPO: 873116202/DYYY
-          UPSTREAM_BRANCH: main
         run: |
           git remote add upstream https://github.com/$UPSTREAM_REPO
           git fetch upstream
-          git merge --no-edit upstream/$UPSTREAM_BRANCH
-          git push origin $UPSTREAM_BRANCH
+          git merge --no-edit upstream/main
+          git push origin main
 
-  build:
-    needs: sync-fork
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Build Environment
+      # 修复依赖安装问题
+      - name: Setup Environment
         run: |
-          # 安装必要依赖
-          brew install -q make perl ldid
-          sudo cpan -i -q File::Which
+          # 强制更新brew
+          brew update-reset
           
-          # 配置Theos
-          git clone https://github.com/roothide/theos.git
-          export THEOS=$PWD/theos
-          echo "THEOS=$THEOS" >> $GITHUB_ENV
+          # 安装核心依赖
+          brew install --force-bottle make ldid
+          export HOMEBREW_NO_INSTALL_CLEANUP=1
           
-          # 安装SDK
-          mkdir -p $THEOS/sdks
-          git clone https://github.com/theos/sdks.git $THEOS/sdks
+          # 修复perl模块安装
+          echo -e "install --force\nnotest" > $HOME/.cpan/CPAN/MyConfig.pm
+          yes | sudo cpan -T File::Which
 
+      # 配置Theos环境
+      - name: Prepare Theos
+        run: |
+          THEOS_DIR="${HOME}/theos_cache"
+          [ -d "$THEOS_DIR" ] || git clone --depth 1 https://github.com/roothide/theos.git $THEOS_DIR
+          ln -sf $THEOS_DIR theos
+          
+          SDK_DIR="${THEOS_DIR}/sdks"
+          [ -d "$SDK_DIR" ] || git clone --filter=blob:none https://github.com/theos/sdks.git $SDK_DIR
+
+      # 智能构建系统
       - name: Build Packages
+        env:
+          THEOS: ${{ github.workspace }}/theos
         run: |
-          export PATH="$THEOS/bin:$PATH"
-          rm -rf packages/*.deb
+          export PATH="${THEOS}/bin:${PATH}"
           
-          # 并行构建
-          schemes=(rootless roothide)
-          for scheme in "${schemes[@]}"; do
-            make clean
-            make package \
+          # 清理旧构建
+          find . -name '*.deb' -delete
+          make clean
+          
+          # 并行安全构建
+          MAX_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
+          SCHEMES=("rootless" "roothide")
+          
+          for scheme in "${SCHEMES[@]}"; do
+            xcrun make package \
               THEOS_PACKAGE_SCHEME=$scheme \
               FINALPACKAGE=1 \
-              -j$(sysctl -n hw.ncpu)
+              -j${MAX_JOBS} \
+              DEBUG=0
           done
 
+      # 增强型制品上传
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: DYYY-Packages
-          path: packages/*.deb
+          name: DYYY-Binaries
+          path: |
+            *.deb
+            !*debug*
+          compression-level: 9
           retention-days: 3
