@@ -1,81 +1,82 @@
-name: Build & Auto Sync
-
+name: Build & Auto Sync 
+ 
 on:
   schedule:
-    - cron: "0 16 * * *"  # 每天UTC时间0点执行（北京时间8点）
+    - cron: "0 16 * * *"  # UTC+8 时间每天8点执行 
   push:
     branches: [ main ]
   pull_request:
-
+ 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-latest 
     permissions:
-      contents: write  # 允许推送代码到仓库
-      pull-requests: write  # 新增权限[6](@ref)
-
+      contents: write  # 需要仓库写权限 
+ 
     steps:
       # 同步上游仓库（仅定时任务触发）
       - name: Sync Fork Repository 
-        if: github.event_name == 'schedule'  # 仅定时任务触发同步
-        env:
-          UPSTREAM_REPO: https://github.com/roothide/theos.git
-          FORK_REPO: https://github.com/873116202/DYYY.git
         run: |
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          git remote add upstream $UPSTREAM_REPO
-          git fetch upstream
-          git checkout main
-          
-          # 避免合并冲突[1](@ref)
-          if ! git merge --no-commit upstream/main; then
-            git merge --abort
-            echo "存在冲突，自动采用上游版本"
-            git merge upstream/main -Xtheirs
-          fi
-          
-          git push "$FORK_REPO" HEAD:main \
-            --force-with-lease \
-            --repo="$FORK_REPO" \
-            --tags \
-            --no-verify
+          git remote add upstream https://github.com/roothide/theos.git 
+          git fetch upstream 
+          git checkout main 
+          git merge upstream/main -X theirs 
+          git push "https://x-access-token:${FORK_PAT}@github.com/873116202/DYYY.git" main 
         env:
-          # 使用加密密钥[7,8](@ref)
-          GITHUB_TOKEN: ${{ secrets.FORK_PAT }}
-
-      # 安全增强：添加缓存清理步骤[6](@ref)
-      - name: Clean workspace
-        if: always()
-        run: |
-          rm -rf "${{ runner.temp }}"/*
-          git clean -ffdx
-
-      # 构建流程优化
-      - name: Checkout code
+          FORK_PAT: ${{ secrets.FORK_PAT }}
+        if: github.event_name == 'schedule'
+ 
+      # 初始化仓库（所有触发条件）
+      - name: Checkout code 
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          fetch-depth: 0  # 获取完整提交历史[5](@ref)
-
-      - name: Check cache 
-        id: cache-check
+          submodules: true 
+          fetch-depth: 0  # 保留完整提交历史 
+ 
+      # 缓存策略优化 
+      - name: Calculate cache key 
         run: |
-          THEOS_HEAD=$(git ls-remote https://github.com/roothide/theos HEAD | cut -f1)
-          SDK_HEAD=$(git ls-remote https://github.com/theos/sdks HEAD | cut -f1)
-          echo "upstream_heads=${THEOS_HEAD}-${SDK_HEAD}" >> $GITHUB_ENV
-          echo "cache_key=${{ runner.os }}-${THEOS_HEAD}-${SDK_HEAD}" >> $GITHUB_OUTPUT
-
-      - name: Cache dependencies
+          UPSTREAM_HEADS=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)
+          SDK_HEADS=$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)
+          echo "CACHE_KEY=macos-$UPSTREAM_HEADS-$SDK_HEADS" >> $GITHUB_ENV 
+ 
+      - name: Restore cache 
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/theos
-          key: ${{ steps.cache-check.outputs.cache_key }}
+          path: |
+            ${{ github.workspace }}/theos 
+            ${{ github.workspace }}/.theos 
+          key: ${{ env.CACHE_KEY }}
           restore-keys: |
-            ${{ runner.os }}-${{ env.upstream_heads }}
-
-      # 后续构建步骤（保持原样）
-      # 示例步骤（根据实际需求补充）
-      - name: Build project
+            macos-
+            ${{ runner.os }}-
+ 
+      # 构建流程（根据实际需求补充）
+      - name: Build Project 
         run: |
-          ./build.sh
+          # 示例构建命令（根据实际项目修改）
+          ./bootstrap.sh 
+          make package 
+ 
+      # 构建后验证（可选）
+      - name: Validate Build 
+        run: |
+          ls -l *.deb  # 检查构建产物存在性
+          file *.deb   # 验证文件类型 
+ 
+      # 错误处理 
+      - name: Handle Errors 
+        if: failure()
+        run: |
+          echo "Build Failed: $(date)"
+          git log -1  # 记录失败时的提交信息 
+ 
+      # 通知（可选）
+      - name: Notify on Failure 
+        if: failure()
+        uses: appleboy/scrapbox-action@v1
+        with:
+          token: ${{ secrets.SCRAPBOX_TOKEN }}
+          message: "Build Failed: ${GITHUB_SHA}"
