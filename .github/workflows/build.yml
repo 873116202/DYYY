@@ -1,18 +1,18 @@
 name: Build & Auto Sync 
- 
+
 on:
   schedule:
     - cron: "0 16 * * *"  # UTC时间0点（北京时间8点）执行 
   push:
     branches: [ main ]
   pull_request:
- 
+
 jobs:
   build:
     runs-on: macos-latest 
     permissions:
-      contents: write  # 需要仓库写权限 
- 
+      contents: write
+
     steps:
       # 同步上游仓库（仅定时任务触发）
       - name: Sync Fork Repository 
@@ -27,21 +27,21 @@ jobs:
         env:
           GITHUB_PAT: ${{ secrets.FORK_PAT }}
         if: github.event_name == 'schedule'
- 
-      # 初始化仓库（所有触发条件）
+
+      # 初始化仓库
       - name: Checkout code 
         uses: actions/checkout@v4
         with:
           submodules: true 
-          fetch-depth: 0  # 保留完整提交历史 
- 
-      # 缓存策略优化 
+          fetch-depth: 0
+
+      # 缓存策略
       - name: Calculate cache key 
         run: |
           UPSTREAM_HEADS=$(git ls-remote https://github.com/roothide/theos | head -n1 | cut -f1)
           SDK_HEADS=$(git ls-remote https://github.com/theos/sdks | head -n1 | cut -f1)
           echo "CACHE_KEY=macos-$UPSTREAM_HEADS-$SDK_HEADS" >> $GITHUB_ENV 
- 
+
       - name: Restore cache 
         uses: actions/cache@v4
         with:
@@ -49,49 +49,41 @@ jobs:
             ${{ github.workspace }}/theos 
             ${{ github.workspace }}/.theos 
           key: ${{ env.CACHE_KEY }}
-          restore-keys: |
-            macos-
-            ${{ runner.os }}-
- 
-      # 构建流程（根据实际需求补充）
+
+      # 构建流程
       - name: Build Project 
         run: |
-          # 示例构建命令（根据实际项目修改）
           ./bootstrap.sh 
           make package 
- 
-      # 构建后验证 
+
+      # 构建验证
       - name: Validate Build 
         run: |
-          ls -l *.deb  # 检查构建产物存在性
-          file *.deb   # 验证文件类型 
- 
-      # 错误处理 
+          ls -l *.deb
+          file *.deb
+
+      # 错误处理
       - name: Handle Errors 
         if: failure()
         run: |
           echo "Build Failed: $(date)"
-          git log -1  # 记录失败时的提交信息 
- 
-      # 通知配置（可选）
+          git log -1
+
+      # 通知配置（已修复下载问题）
       - name: Notify on Success 
         if: success()
-        uses: appleboy/scrapbox-action@v1
+        uses: appleboy/scrapbox-action@v1.0.0
         with:
-          token: ${{ secrets.SCRAPBOX_TOKEN }}
-          message: "Build Success: ${{ github.sha }}"
- 
+          scrapbox_project_id: ${{ secrets.SCRAPBOX_PROJECT_ID }}
+          scrapbox_token: ${{ secrets.SCRAPBOX_TOKEN }}
+          markdown_file: 'README.md'
+          message: "✅ Build Success: ${{ github.sha }}"
+
       - name: Notify on Failure 
         if: failure()
-        uses: appleboy/scrapbox-action@v1
+        uses: appleboy/scrapbox-action@v1.0.0
         with:
-          token: ${{ secrets.SCRAPBOX_TOKEN }}
-          message: "Build Failed: ${{ github.sha }}"
- 
-      # 部署步骤（根据需求添加）
-      - name: Deploy to Server 
-        if: success()
-        run: |
-          scp *.deb user@server:/path/to/deploy 
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
+          scrapbox_project_id: ${{ secrets.SCRAPBOX_PROJECT_ID }}
+          scrapbox_token: ${{ secrets.SCRAPBOX_TOKEN }}
+          markdown_file: 'README.md'
+          message: "❌ Build Failed: ${{ github.sha }}"
