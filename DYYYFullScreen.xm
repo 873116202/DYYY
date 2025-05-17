@@ -191,9 +191,7 @@ static void DYYYAddCustomViewToParent(UIView *parentView, float transparency) {
 %hook AWEPlayInteractionViewController
 - (void)viewDidLayoutSubviews {
 	%orig;
-	if (![self.parentViewController isKindOfClass:%c(AWEFeedCellViewController)]) {
-		return;
-	}
+
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
 		CGRect frame = self.view.frame;
 		frame.size.height = self.view.superview.frame.size.height - 83;
@@ -215,6 +213,9 @@ static void DYYYAddCustomViewToParent(UIView *parentView, float transparency) {
 
 			if (frame.size.height == parentHeight - 83) {
 				frame.size.height = parentHeight;
+				contentView.frame = frame;
+			} else if (frame.size.height == parentHeight - 166) {
+				frame.size.height = parentHeight - 83;
 				contentView.frame = frame;
 			}
 		}
@@ -590,8 +591,47 @@ static CGFloat currentScale = 1.0;
 
 %end
 
+%hook AWEAwemeDetailTableView
+
+- (void)setFrame:(CGRect)frame {
+	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
+		frame.size.height += 83;
+	}
+	%orig(frame);
+}
+
+%end
+
+%hook CommentInputContainerView
+
+- (void)layoutSubviews {
+	%orig;
+	UIViewController *parentVC = nil;
+	if ([self respondsToSelector:@selector(viewController)]) {
+		id viewController = [self performSelector:@selector(viewController)];
+		if ([viewController respondsToSelector:@selector(parentViewController)]) {
+			parentVC = [viewController parentViewController];
+		}
+	}
+
+	if (parentVC && [parentVC isKindOfClass:%c(AWEAwemeDetailTableViewController)]) {
+		for (UIView *subview in [self subviews]) {
+			if ([subview class] == [UIView class]) {
+				subview.hidden = YES;
+				break;
+			}
+		}
+	}
+}
+
+%end
+
 %ctor {
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYUserAgreementAccepted"]) {
-		%init;
+		static dispatch_once_t onceToken;
+		dispatch_once(&onceToken, ^{
+		  Class wSwiftImpl = objc_getClass("AWECommentInputViewSwiftImpl.CommentInputContainerView");
+		  %init(CommentInputContainerView = wSwiftImpl);
+		});
 	}
 }
