@@ -161,6 +161,17 @@ static void DYYYAddCustomViewToParent(UIView *parentView, float transparency) {
 		return;
 	}
 
+	UIViewController *viewController = [self firstAvailableUIViewController];
+	if ([viewController isKindOfClass:%c(AWEMixVideoPanelDetailTableViewController)] && [[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
+		self.backgroundColor = [UIColor clearColor];
+
+		for (UIView *subview in self.subviews) {
+			if ([subview isKindOfClass:[UIView class]]) {
+				subview.backgroundColor = [UIColor clearColor];
+			}
+		}
+	}
+
 	UIViewController *vc = [self firstAvailableUIViewController];
 	if ([vc isKindOfClass:%c(AWEAwemePlayVideoViewController)] || [vc isKindOfClass:%c(AWEDPlayerFeedPlayerViewController)]) {
 
@@ -193,8 +204,20 @@ static void DYYYAddCustomViewToParent(UIView *parentView, float transparency) {
 	%orig;
 
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
+		NSString *currentReferString = self.referString;
 		CGRect frame = self.view.frame;
-		frame.size.height = self.view.superview.frame.size.height - 83;
+
+		// 根据referString来决定是否减去83点
+		if ([currentReferString isEqualToString:@"general_search"]) {
+			frame.size.height = self.view.superview.frame.size.height;
+		} else if ([currentReferString isEqualToString:@"chat"] || currentReferString == nil) {
+			frame.size.height = self.view.superview.frame.size.height;
+		} else if ([currentReferString isEqualToString:@"others_homepage"] || currentReferString == nil) {
+			frame.size.height = self.view.superview.frame.size.height - 83;
+		} else {
+			frame.size.height = self.view.superview.frame.size.height - 83;
+		}
+
 		self.view.frame = frame;
 	}
 }
@@ -336,7 +359,7 @@ static CGFloat currentScale = 1.0;
 			}
 		}
 	}
-	// 左侧元素的处理逻辑（仅当未锁定时执行）
+	// 左侧元素的处理逻辑
 	else if ([self.accessibilityLabel isEqualToString:@"left"]) {
 		NSString *scaleValue = [[NSUserDefaults standardUserDefaults] objectForKey:@"DYYYNicknameScale"];
 
@@ -595,9 +618,25 @@ static CGFloat currentScale = 1.0;
 
 - (void)setFrame:(CGRect)frame {
 	if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
-		frame.size.height += 83;
+		CGFloat screenHeight = [UIScreen mainScreen].bounds.size.height;
+
+		CGFloat remainder = fmod(frame.size.height, screenHeight);
+		if (remainder != 0) {
+			frame.size.height += (screenHeight - remainder);
+		}
 	}
 	%orig(frame);
+}
+
+%end
+
+%hook AWEMixVideoPanelMoreView
+
+- (void)setFrame:(CGRect)frame {
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYisEnableFullScreen"]) {
+        frame.origin.y -= 83;
+    }
+    %orig(frame);
 }
 
 %end
@@ -614,7 +653,7 @@ static CGFloat currentScale = 1.0;
 		}
 	}
 
-	if (parentVC && [parentVC isKindOfClass:%c(AWEAwemeDetailTableViewController)]) {
+	if (parentVC && ([parentVC isKindOfClass:%c(AWEAwemeDetailTableViewController)] || [parentVC isKindOfClass:%c(AWEAwemeDetailCellViewController)])) {
 		for (UIView *subview in [self subviews]) {
 			if ([subview class] == [UIView class]) {
 				subview.hidden = YES;
