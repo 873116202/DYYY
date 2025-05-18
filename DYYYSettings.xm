@@ -866,6 +866,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 		    @"detail" : @"",
 		    @"cellType" : @6,
 		    @"imageName" : @"ic_eyeslash_outlined_16"},
+		  @{@"identifier" : @"DYYYHideDoubleColumnEntry",
+		    @"title" : @"隐藏双列箭头",
+		    @"detail" : @"",
+		    @"cellType" : @6,
+		    @"imageName" : @"ic_eyeslash_outlined_16"},
 		  @{@"identifier" : @"DYYYHideShopButton",
 		    @"title" : @"隐藏底栏商城",
 		    @"detail" : @"",
@@ -1435,6 +1440,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 	  // 【长按评论分类】
 	  NSMutableArray<AWESettingItemModel *> *commentpanel = [NSMutableArray array];
 	  NSArray *commentpanelSettings = @[
+		  @{@"identifier" : @"DYYYHideCommentShareToFriends",
+		    @"title" : @"隐藏评论分享",
+		    @"detail" : @"",
+		    @"cellType" : @6,
+		    @"imageName" : @"ic_eyeslash_outlined_16"},
 		  @{@"identifier" : @"DYYYHideCommentLongPressCopy",
 		    @"title" : @"隐藏评论复制",
 		    @"detail" : @"",
