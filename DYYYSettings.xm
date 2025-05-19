@@ -387,6 +387,48 @@ static void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed);
 }
 %end
 
+%hook AWELeftSideBarEntranceView
+- (void)leftSideBarEntranceViewTapped:(UITapGestureRecognizer *)gesture {
+
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYentrance"]) {
+
+        UIViewController *feedVC = nil;
+        UIResponder      *resp   = self;
+        Class feedCls            = %c(AWEFeedContainerViewController);
+
+        while (resp) {
+            if ([resp isKindOfClass:feedCls]) {
+                feedVC = (UIViewController *)resp;
+                break;
+            }
+            resp = [resp nextResponder];
+        }
+
+        if (!feedVC) {
+            UIViewController *root =
+                UIApplication.sharedApplication.keyWindow.rootViewController;
+            while (root) {
+                if ([root isKindOfClass:feedCls]) {
+                    feedVC = root;
+                    break;
+                }
+                root = root.presentedViewController;
+            }
+        }
+
+        if (feedVC) {
+            BOOL hasAgreed = [[NSUserDefaults standardUserDefaults] boolForKey:@"DYYYUserAgreementAccepted"];
+            showDYYYSettingsVC(feedVC, hasAgreed);
+            return;
+        }
+    }
+
+    %orig;
+}
+
+%end
+
+
 static AWESettingBaseViewController *createSubSettingsViewController(NSString *title, NSArray *sectionsArray) {
 	AWESettingBaseViewController *settingsVC = [[%c(AWESettingBaseViewController) alloc] init];
 
@@ -1231,6 +1273,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 		    @"detail" : @"",
 		    @"cellType" : @6,
 		    @"imageName" : @"ic_eyeslash_outlined_16"},
+		  @{@"identifier" : @"DYYYHideSearchBubble",
+		    @"title" : @"隐藏弹出热搜",
+		    @"detail" : @"",
+		    @"cellType" : @6,
+		    @"imageName" : @"ic_eyeslash_outlined_16"},
 		  @{@"identifier" : @"DYYYHideSearchSame",
 		    @"title" : @"隐藏搜索同款",
 		    @"detail" : @"",
@@ -1403,6 +1450,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 		    @"imageName" : @"ic_eyeslash_outlined_16"},
 		  @{@"identifier" : @"DYYYHideScancode",
 		    @"title" : @"隐藏输入扫码",
+		    @"detail" : @"",
+		    @"cellType" : @6,
+		    @"imageName" : @"ic_eyeslash_outlined_16"},
+		  @{@"identifier" : @"DYYYHideReply",
+		    @"title" : @"隐藏私信回复",
 		    @"detail" : @"",
 		    @"cellType" : @6,
 		    @"imageName" : @"ic_eyeslash_outlined_16"}
@@ -2151,6 +2203,11 @@ void showDYYYSettingsVC(UIViewController *rootVC, BOOL hasAgreed) {
 	  // 【交互增强】分类
 	  NSMutableArray<AWESettingItemModel *> *interactionItems = [NSMutableArray array];
 	  NSArray *interactionSettings = @[
+		  @{@"identifier" : @"DYYYentrance",
+		    @"title" : @"左侧边栏快捷入口",
+		    @"detail" : @"",
+		    @"cellType" : @6,
+		    @"imageName" : @"ic_gearsimplify_outlined_20"},
 		  @{@"identifier" : @"DYYYCommentCopyText",
 		    @"title" : @"长按评论复制文案",
 		    @"detail" : @"",
