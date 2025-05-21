@@ -137,6 +137,9 @@ typedef NS_ENUM(NSInteger, MediaType) {
 @interface AWEHPTopTabItemBadgeContentView : UIView
 @end
 
+@interface AWEFeedTabJumpGuideView : UIView
+@end
+
 @interface AWEProgressLoadingView : UIView
 - (id)initWithType:(NSInteger)arg1 title:(NSString *)arg2;
 - (id)initWithType:(NSInteger)arg1 title:(NSString *)arg2 progressTextFont:(UIFont *)arg3 progressCircleWidth:(NSNumber *)arg4;
@@ -933,10 +936,13 @@ typedef NS_ENUM(NSInteger, MediaType) {
 @interface AWEFeedRootViewController : UIViewController
 - (BOOL)prefersStatusBarHidden;
 @end
-@interface IESLiveAudienceViewController : UIView
+@interface IESLiveAudienceViewController : UIViewController
 - (BOOL)prefersStatusBarHidden;
 @end
-@interface AWEAwemeDetailTableViewController : UIView
+@interface AWEAwemeDetailTableViewController : UIViewController
+- (BOOL)prefersStatusBarHidden;
+@end
+@interface AWEFullPageFeedNewContainerViewController : UIViewController
 - (BOOL)prefersStatusBarHidden;
 @end
 
